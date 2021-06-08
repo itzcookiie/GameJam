@@ -82,8 +82,11 @@ window.addEventListener('keydown', e => {
 
 function moveCommand(axisIndex, increment) {
     const newPosition = gameGrid.startPos.map((pos, index) => index === axisIndex ? pos + increment : pos);
+    const gameGridCopy = JSON.parse(JSON.stringify(gameGrid));
     const newCordPosition = calculateCords(gameGrid, gameGrid.currentShape, newPosition);
-    if(!cordsAreNotValid(newCordPosition)) {
+    gameGridCopy.currentCords = newCordPosition;
+
+    if(!cordsAreNotValid(gameGridCopy)) {
         gameGrid.startPos[axisIndex]+=increment;
     }
 }
@@ -105,16 +108,16 @@ function rotate() {
         return;
     }
     const newCordPosition = calculateCords(gameGridCopy, gameGridCopy.currentShape, gameGridCopy.startPos);
-    if(!cordsAreNotValid(newCordPosition, gameGridCopy.currentShape)) {
+    gameGridCopy.currentCords = newCordPosition;
+    if(!cordsAreNotValid(gameGridCopy)) {
         gameGrid.currentShape.cords = newSetOfCords;
         gameGrid.currentShape.rotationStage = newRotationStage;
     }
-    console.log(!cordsAreNotValid(newCordPosition))
 }
 
-function cordsAreNotValid(cords, currentShape) {
+function cordsAreNotValid(grid) {
     // Makes sure one block is not in column 1 and another block is in the last column
-    return shapeHitWall(cords) && collisionWithFloor(currentShape);
+    return shapeHitWall(grid.currentCords) || collisionWithBlocks(grid);
 }
 
 function shapeHitWall(cords) {
@@ -288,6 +291,7 @@ function dropShape(timestamp) {
     shapeGrid.paintGrid();
     const hasCollided = checkCollisions();
     if(hasCollided) {
+        console.log('collision')
         shapes.push({
             ...currentShape,
             currentCords,
@@ -315,29 +319,28 @@ function removeShapeFromGrid() {
 }
 
 function checkCollisions() {
-    const yDistance = gameGrid.cellHeight;
-    return collisionWithFloor()
-        // || collisionWithBlocks(gameGrid, yDistance);
+    return collisionWithFloor() ;
 }
 
-function collisionWithFloor(currentCords=gameGrid.currentCords) {
-    const { cols, cellHeight, startPos, currentShape, shapes } = gameGrid;
+function collisionWithFloor(grid=gameGrid) {
+    const { cols, cellHeight, startPos, currentShape, shapes, currentCords } = grid;
     const bottomOfGrid = cellHeight * cols;
     const blocksTouchingBottom = currentCords.some(cord => cord.y === bottomOfGrid);
     return blocksTouchingBottom ? true : false;
 }
 
-function collisionWithBlocks(grid, yDistance= 0) {
-    return grid.shapes.length > 0 && grid.currentCords.some(cord => grid.shapes.some(
-        shape => {
-            const result = shape.currentCords.some(shapeCord => {
-                const result = cord.x === shapeCord.x && cord.y + yDistance === shapeCord.y
-                console.log('inner result', result);
-                return cord.x === shapeCord.x && cord.y + yDistance === shapeCord.y
-            })
-            console.log(result);
-            return result
-        }
+function collisionWithBlocks(grid) {
+    // Fix so shape cannot rotate if obstacle is right next to it
+    // IE. it can't jump over a shape to rotate if the obstacle is along the path of rotation
+    return grid.shapes.length > 0 && grid.currentCords.some((cord, index) => grid.shapes.some(
+        shape => shape.currentCords.some(shapeCord => {
+                const upperBoundCord = cord;
+                const lowerBoundCord = gameGrid.currentCords[index];
+                console.log(upperBoundCord, lowerBoundCord, {x: shapeCord.x, y: shapeCord.y}, index)
+                return (shapeCord.x <= upperBoundCord.x && shapeCord.x >= lowerBoundCord.x) &&
+                    (shapeCord.y <= upperBoundCord.y && shapeCord.y >= lowerBoundCord.y)
+            }
+            )
         )
     );
 }
