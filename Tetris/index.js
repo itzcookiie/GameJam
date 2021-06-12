@@ -1,5 +1,6 @@
 const gameCanvas = document.getElementById('gameCanvas'),
-    shapeCanvas = document.getElementById('shapeCanvas');
+    shapeCanvas = document.getElementById('shapeCanvas'),
+    connectSound = new Audio('./connect.wav');
 
 // const gameState = {
 //     GAME_GRID_
@@ -279,19 +280,21 @@ function dropShape(timestamp) {
 
     // if (!start) start = timestamp;
     // if(timestamp - start > 1000) {
-    //     removeShapeFromGrid(gameGrid, gameGrid.currentShape, gameGrid.startPos);
-    //     let newStartPos = [gameGrid.startPos[0], ++gameGrid.startPos[1]];
-    //     gameGrid.paintGrid();
-    //     addShapeToGrid(gameGrid, gameGrid.currentShape, newStartPos);
     //     start = timestamp;
     // }
-    // console.log('before', gameGrid.shapes);
-    removeShapeFromGrid();
+    clearGrid();
     gameGrid.paintGrid();
     shapeGrid.paintGrid();
+    const filledRows = rowIsFilled();
+    if(filledRows) {
+        const filledRow = getRow(filledRows);
+        const nonFilledRowsCords = removeRow(filledRows);
+        gameGrid.shapes = nonFilledRowsCords
+        moveBlocksDown(filledRows);
+    }
     const hasCollided = checkCollisions();
     if(hasCollided) {
-        console.log('collision')
+        connectSound.play();
         shapes.push({
             ...currentShape,
             currentCords,
@@ -311,7 +314,7 @@ function dropShape(timestamp) {
 
 requestAnimationFrame(dropShape);
 
-function removeShapeFromGrid() {
+function clearGrid() {
     const { borderOffset: gameGridBorderOffset, ctx: gameGridCtx } = gameGrid;
     const { borderOffset: shapeGridBorderOffset, ctx: shapeGridCtx } = shapeGrid;
     gameGridCtx.clearRect(gameGridBorderOffset, gameGridBorderOffset, gameCanvas.width - gameGridBorderOffset * 2, gameCanvas.height - gameGridBorderOffset * 2);
@@ -319,7 +322,7 @@ function removeShapeFromGrid() {
 }
 
 function checkCollisions() {
-    return collisionWithFloor() ;
+    return collisionWithFloor() || collisionWithTopOfBlock();
 }
 
 function collisionWithFloor(grid=gameGrid) {
@@ -336,11 +339,81 @@ function collisionWithBlocks(grid) {
         shape => shape.currentCords.some(shapeCord => {
                 const upperBoundCord = cord;
                 const lowerBoundCord = gameGrid.currentCords[index];
-                console.log(upperBoundCord, lowerBoundCord, {x: shapeCord.x, y: shapeCord.y}, index)
-                return (shapeCord.x <= upperBoundCord.x && shapeCord.x >= lowerBoundCord.x) &&
-                    (shapeCord.y <= upperBoundCord.y && shapeCord.y >= lowerBoundCord.y)
-            }
+                return (shapeCord.x <= upperBoundCord.x && shapeCord.x >= lowerBoundCord.x && shapeCord.y <= upperBoundCord.y && shapeCord.y >= lowerBoundCord.y) ||
+                    (shapeCord.x <= lowerBoundCord.x && shapeCord.x >= upperBoundCord.x && shapeCord.y <= lowerBoundCord.y && shapeCord.y >= upperBoundCord.y) ||
+                    (shapeCord.x >= lowerBoundCord.x && shapeCord.x <= upperBoundCord.x && shapeCord.y <= lowerBoundCord.y && shapeCord.y >= upperBoundCord.y) ||
+                    (shapeCord.x <= lowerBoundCord.x && shapeCord.x >= upperBoundCord.x && shapeCord.y >= lowerBoundCord.y && shapeCord.y <= upperBoundCord.y)
+                }
             )
         )
     );
+}
+
+function collisionWithTopOfBlock() {
+    return gameGrid.shapes.length > 0 && gameGrid.currentCords.some(cord => gameGrid.shapes.some(shape =>
+            shape.currentCords.some(shapeCord =>
+                cord.x === shapeCord.x && cord.y + gameGrid.cellHeight === shapeCord.y
+            )
+        )
+    );
+}
+
+function rowIsFilled() {
+    if(gameGrid.shapes.length > 0) {
+        const shapeRowPositions = gameGrid.shapes.flatMap(getShapeRowPositions);
+        const rowObject = createRowObject(shapeRowPositions);
+        const rows = Object.keys(rowObject);
+        const filledRow = rows.filter(row => rowObject[row] >= 5);
+        return filledRow.length && filledRow.map(row => +row);
+    }
+
+    return 0;
+}
+
+function getShapeRowPositions(shape) {
+    return shape.currentCords.map(cord => cord.y)
+}
+
+function createRowObject(rowPositions) {
+    return rowPositions.reduce((acc,val) => {
+        if(!acc[val]) acc[val] = 0;
+        acc[val]++;
+        return acc
+    }, {})
+}
+
+function removeRow(rows) {
+    return gameGrid.shapes.map(shape => ({
+            ...shape,
+            currentCords: getNonFilledInRowBlocks(shape, rows)
+        })
+    )
+}
+
+function getNonFilledInRowBlocks(shape, rows) {
+    return shape.currentCords.filter(cord => rows.every(row => cord.y !== row))
+}
+
+function getRow(rows) {
+    return gameGrid.shapes.map(shape => ({
+        ...shape,
+        currentCords: getFilledRowBlocks(shape, rows)
+    })
+)
+}
+
+function getFilledRowBlocks(shape, rows) {
+    return shape.currentCords.filter(cord => rows.some(row => cord.y === row))
+}
+
+function moveBlocksDown(rows) {
+    rows.forEach(row =>
+        gameGrid.shapes.forEach(shape => 
+            shape.currentCords.forEach(cord => {
+                if(cord.y < row) {
+                    cord.y+=gameGrid.cellHeight
+                }
+            })
+        )
+    )
 }
