@@ -2,9 +2,14 @@ const gameCanvas = document.getElementById('gameCanvas'),
     shapeCanvas = document.getElementById('shapeCanvas'),
     connectSound = new Audio('./connect.wav');
 
-// const gameState = {
-//     GAME_GRID_
-// };
+const gameStates = {
+    PLAY: 0,
+    CLEAR_ROW_ANIMATION: 1,
+    START_ROW_ANIMATION: 2,
+    FINISH_ROW_ANIMATION: 1,
+};
+
+let gameState = gameStates.PLAY;
 
 const shapes = [
     // I block
@@ -274,6 +279,9 @@ addShapeToGrid(shapeGrid, randomCords, [5,3]);
 addShapeToGrid(gameGrid, randomCords, [10,4]);
 
 let start = 0;
+const timeObj = {
+    start: 0
+}
 
 function dropShape(timestamp) {
     const { startPos, currentCords, currentShape, shapes, paintGrid } = gameGrid;
@@ -282,18 +290,27 @@ function dropShape(timestamp) {
     // if(timestamp - start > 1000) {
     //     start = timestamp;
     // }
-    clearGrid();
-    gameGrid.paintGrid();
-    shapeGrid.paintGrid();
     const filledRows = rowIsFilled();
     if(filledRows) {
-        const filledRow = getRow(filledRows);
-        const nonFilledRowsCords = removeRow(filledRows);
-        gameGrid.shapes = nonFilledRowsCords
-        moveBlocksDown(filledRows);
-    }
-    const hasCollided = checkCollisions();
-    if(hasCollided) {
+        // TODO: Rewrite dropShape loop to work around gameState.
+        // For animations to work, we have to sync it with our game loop
+        // IE. time has to be synced with our game loop
+        // Or time is in the game loop. We can't separate time from the game loop basically
+
+        timeObj.start = timestamp;
+        // gameGrid.ctx.save();
+        gameState = gameStates.START_ROW_ANIMATION;
+        const rowWithAnimationTimes = addAnimationTimeToRows(filledRows, 5000);
+        highlightRows(rowWithAnimationTimes, timeObj.start);
+        // gameGrid.ctx.restore();
+
+
+        if(gameState === gameStates.FINISH_ROW_ANIMATION) {            
+            const nonFilledRowsCords = removeRow(filledRows);
+            gameGrid.shapes = nonFilledRowsCords;
+            moveBlocksDown(filledRows);
+        }
+    } else if(checkCollisions()) {
         connectSound.play();
         shapes.push({
             ...currentShape,
@@ -304,15 +321,60 @@ function dropShape(timestamp) {
         addShapeToGrid(shapeGrid, randomCords, [5,3]);
         addShapeToGrid(gameGrid, randomCords, [10,4], 'dropshape');
     } else {
+        clearGrid();
+        gameGrid.paintGrid();
+        shapeGrid.paintGrid();
         addShapeToGrid(shapeGrid, shapeGrid.currentShape, shapeGrid.startPos);
         addShapeToGrid(gameGrid, gameGrid.currentShape, gameGrid.startPos, 'dropshape');
     }
-    addShapesToGrid();
+
+    if(gameState !== gameStates.START_ROW_ANIMATION) addShapesToGrid();
     // console.log('after', gameGrid.shapes);
     requestAnimationFrame(dropShape)
 }
 
 requestAnimationFrame(dropShape);
+
+function addAnimationTimeToRows(rowCords, timeFrame) {
+    return rowCords.map(rowCord => 
+    ({
+        ...rowCord,
+        cords: rowCord.cords.map((cord,i) => 
+            ({
+            ...cord,
+            time: i * timeFrame
+            }))
+        })
+    )
+}
+
+function highlightRows(rowCords, time) {
+    rowCords.forEach(rowCord => rowCord.cords.forEach((cord,i) => {
+        console.log(cord.x, cord.y)
+        if(cord.time - time <= 0) {
+            console.log('CHANGE COLOUR TO WHITE')
+            gameGrid.ctx.fillStyle = 'white';
+            gameGrid.ctx.fillRect(cord.x, cord.y, gameGrid.cellWidth, gameGrid.cellHeight);
+            }
+        })
+    )
+
+    // console.log('highlighting row', cordIndex)
+    // if(rowIndex === rowCords.length - 1 && cordIndex === rowCords[rowIndex].length - 1) {
+    //     return;
+    // }
+
+    // if(cordIndex === rowCords[rowIndex].length - 1) {
+    //     highlightRows(rowCords, ++rowIndex, 0);
+    // }
+
+    // const block = rowCords[rowIndex].cords[cordIndex];
+    // gameGrid.ctx.fillStyle = 'white';
+    // gameGrid.ctx.fillRect(block.x, block.y, gameGrid.cellWidth, gameGrid.cellHeight);
+    // setTimeout(() => {
+    //     highlightRows(rowCords, rowIndex, ++cordIndex);
+    // }, 1000)
+}
 
 function clearGrid() {
     const { borderOffset: gameGridBorderOffset, ctx: gameGridCtx } = gameGrid;
@@ -362,22 +424,23 @@ function rowIsFilled() {
     if(gameGrid.shapes.length > 0) {
         const shapeRowPositions = gameGrid.shapes.flatMap(getShapeRowPositions);
         const rowObject = createRowObject(shapeRowPositions);
+        console.log(rowObject)
         const rows = Object.keys(rowObject);
-        const filledRow = rows.filter(row => rowObject[row] >= 5);
-        return filledRow.length && filledRow.map(row => +row);
+        const filledRow = rows.filter(row => rowObject[row].length >= 5);
+        return filledRow.length && filledRow.map(row => ({row: +row, cords: rowObject[row]}));
     }
 
     return 0;
 }
 
 function getShapeRowPositions(shape) {
-    return shape.currentCords.map(cord => cord.y)
+    return shape.currentCords.map(cord => cord)
 }
 
 function createRowObject(rowPositions) {
     return rowPositions.reduce((acc,val) => {
-        if(!acc[val]) acc[val] = 0;
-        acc[val]++;
+        if(!acc[val.y]) acc[val.y] = [];
+        acc[val.y].push(val);
         return acc
     }, {})
 }
@@ -390,27 +453,28 @@ function removeRow(rows) {
     )
 }
 
-function getNonFilledInRowBlocks(shape, rows) {
-    return shape.currentCords.filter(cord => rows.every(row => cord.y !== row))
+function getNonFilledInRowBlocks(shape, rowObjs) {
+    return shape.currentCords.filter(cord => rowObjs.every(rowObj => cord.y !== rowObj.row))
 }
 
-function getRow(rows) {
-    return gameGrid.shapes.map(shape => ({
-        ...shape,
-        currentCords: getFilledRowBlocks(shape, rows)
-    })
-)
+// function getRow(rows) {
+//     return rows.map(row => )
+//     return gameGrid.shapes.map(shape => ({
+//         ...shape,
+//         currentCords: getFilledRowBlocks(shape, rows)
+//         })
+//     )
+// }
+
+function getFilledRowBlocks(shape, rowObjs) {
+    return shape.currentCords.filter(cord => rowObjs.some(rowObj => cord.y === rowObj.row))
 }
 
-function getFilledRowBlocks(shape, rows) {
-    return shape.currentCords.filter(cord => rows.some(row => cord.y === row))
-}
-
-function moveBlocksDown(rows) {
-    rows.forEach(row =>
+function moveBlocksDown(rowObjs) {
+    rowObjs.forEach(rowObj =>
         gameGrid.shapes.forEach(shape => 
             shape.currentCords.forEach(cord => {
-                if(cord.y < row) {
+                if(cord.y < rowObj.row) {
                     cord.y+=gameGrid.cellHeight
                 }
             })
