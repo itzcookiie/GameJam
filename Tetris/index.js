@@ -1,12 +1,14 @@
 const gameCanvas = document.getElementById('gameCanvas'),
     shapeCanvas = document.getElementById('shapeCanvas'),
-    connectSound = new Audio('./connect.wav');
+    connectSound = new Audio('./connect.wav'),
+    ROW_ANIMATION_TIME = 2000; // 2 seconds
 
 const gameStates = {
     PLAY: 0,
-    CLEAR_ROW_ANIMATION: 1,
-    START_ROW_ANIMATION: 2,
-    FINISH_ROW_ANIMATION: 1,
+    START_ROW_ANIMATION: 1,
+    FINISH_ROW_ANIMATION: 2,
+    COLLISION: 3,
+    GAME_OVER: 4
 };
 
 let gameState = gameStates.PLAY;
@@ -278,9 +280,9 @@ const randomCords = getRandomShapeCords();
 addShapeToGrid(shapeGrid, randomCords, [5,3]);
 addShapeToGrid(gameGrid, randomCords, [10,4]);
 
-let start = 0;
-const timeObj = {
-    start: 0
+const gameObj = {
+    start: 0,
+    rowWithAnimationTimes: []
 }
 
 function dropShape(timestamp) {
@@ -290,74 +292,107 @@ function dropShape(timestamp) {
     // if(timestamp - start > 1000) {
     //     start = timestamp;
     // }
-    const filledRows = rowIsFilled();
-    if(filledRows) {
-        // TODO: Rewrite dropShape loop to work around gameState.
-        // For animations to work, we have to sync it with our game loop
-        // IE. time has to be synced with our game loop
-        // Or time is in the game loop. We can't separate time from the game loop basically
-
-        timeObj.start = timestamp;
-        // gameGrid.ctx.save();
-        gameState = gameStates.START_ROW_ANIMATION;
-        const rowWithAnimationTimes = addAnimationTimeToRows(filledRows, 5000);
-        highlightRows(rowWithAnimationTimes, timeObj.start);
-        // gameGrid.ctx.restore();
 
 
-        if(gameState === gameStates.FINISH_ROW_ANIMATION) {            
-            const nonFilledRowsCords = removeRow(filledRows);
-            gameGrid.shapes = nonFilledRowsCords;
-            moveBlocksDown(filledRows);
+
+    if(gameState === gameStates.PLAY) {
+        if(checkCollisions()) {
+            gameState = gameStates.COLLISION;
+        } else {
+            clearGrid();
+            gameGrid.paintGrid();
+            shapeGrid.paintGrid();
+            addShapeToGrid(shapeGrid, shapeGrid.currentShape, shapeGrid.startPos);
+            addShapeToGrid(gameGrid, gameGrid.currentShape, gameGrid.startPos, 'dropshape');
+            addShapesToGrid();
         }
-    } else if(checkCollisions()) {
+    } else if(gameState === gameStates.START_ROW_ANIMATION) {
+        const now = timestamp - gameObj.start;
+        highlightRows(gameObj.rowWithAnimationTimes, now);
+    } else if(gameState === gameStates.COLLISION) {
         connectSound.play();
         shapes.push({
             ...currentShape,
             currentCords,
             startPos
         });
-        const randomCords = getRandomShapeCords();
-        addShapeToGrid(shapeGrid, randomCords, [5,3]);
-        addShapeToGrid(gameGrid, randomCords, [10,4], 'dropshape');
-    } else {
-        clearGrid();
-        gameGrid.paintGrid();
-        shapeGrid.paintGrid();
-        addShapeToGrid(shapeGrid, shapeGrid.currentShape, shapeGrid.startPos);
-        addShapeToGrid(gameGrid, gameGrid.currentShape, gameGrid.startPos, 'dropshape');
+
+        const filledRows = rowIsFilled();
+        if(filledRows) {
+            // TODO: Fix this state. Shape is getting mutated for some reason
+            console.log(filledRows, '?')
+            // TODO: Rewrite dropShape loop to work around gameState.
+            // For animations to work, we have to sync it with our game loop
+            // IE. time has to be synced with our game loop
+            // Or time is in the game loop. We can't separate time from the game loop basically
+
+            gameObj.start = timestamp;
+            // gameGrid.ctx.save();
+            gameObj.rowWithAnimationTimes.push(...addAnimationTimeToRows(filledRows));
+            gameState = gameStates.START_ROW_ANIMATION;
+        } else if(gameOver()) {
+            gameState = gameStates.GAME_OVER;
+        } else {
+            const randomCords = getRandomShapeCords();
+            addShapeToGrid(shapeGrid, randomCords, [5,3]);
+            addShapeToGrid(gameGrid, randomCords, [10,4], 'dropshape');
+            gameState = gameStates.PLAY;
+        }
+    } else if(gameState === gameStates.GAME_OVER) {
+
     }
 
-    if(gameState !== gameStates.START_ROW_ANIMATION) addShapesToGrid();
+
+
+
+    // } else if(gameState === gameStates.START_ROW_ANIMATION) {
+    //
+    //     // gameGrid.ctx.restore();
+    //
+    //
+    //     if(gameState === gameStates.FINISH_ROW_ANIMATION) {
+    //
+    //     }
+    // } else if(checkCollisions()) {
+    //
+    //     const randomCords = getRandomShapeCords();
+    //     addShapeToGrid(shapeGrid, randomCords, [5,3]);
+    //     addShapeToGrid(gameGrid, randomCords, [10,4], 'dropshape');
+    // } else {
+    //
+    // }
+
     // console.log('after', gameGrid.shapes);
     requestAnimationFrame(dropShape)
 }
 
 requestAnimationFrame(dropShape);
 
-function addAnimationTimeToRows(rowCords, timeFrame) {
-    return rowCords.map(rowCord => 
+function addAnimationTimeToRows(rowCords) {
+    return rowCords.map(rowCord =>
     ({
         ...rowCord,
-        cords: rowCord.cords.map((cord,i) => 
+        cords: rowCord.cords.map((cord,i,cordsArr) =>
             ({
             ...cord,
-            time: i * timeFrame
+            time: (ROW_ANIMATION_TIME / cordsArr.length) * i
             }))
         })
     )
 }
 
 function highlightRows(rowCords, time) {
-    rowCords.forEach(rowCord => rowCord.cords.forEach((cord,i) => {
-        console.log(cord.x, cord.y)
-        if(cord.time - time <= 0) {
-            console.log('CHANGE COLOUR TO WHITE')
-            gameGrid.ctx.fillStyle = 'white';
-            gameGrid.ctx.fillRect(cord.x, cord.y, gameGrid.cellWidth, gameGrid.cellHeight);
-            }
+    const cordsToAnimate = rowCords.flatMap(rowCord => rowCord.cords.filter((cord, i) => {
+            return cord.time - time <= 0
         })
-    )
+    );
+    const rowAnimationTimePerFrame = ROW_ANIMATION_TIME / cordsToAnimate.length;
+    console.log(rowAnimationTimePerFrame, cordsToAnimate)
+    cordsToAnimate.forEach((cord, i, arr) => {
+        gameGrid.ctx.fillStyle = 'white';
+        gameGrid.ctx.fillRect(cord.x, cord.y, gameGrid.cellWidth, gameGrid.cellHeight);
+        if (cord.time === ROW_ANIMATION_TIME - rowAnimationTimePerFrame) rowAnimationCallback(rowCords);
+    });
 
     // console.log('highlighting row', cordIndex)
     // if(rowIndex === rowCords.length - 1 && cordIndex === rowCords[rowIndex].length - 1) {
@@ -420,10 +455,16 @@ function collisionWithTopOfBlock() {
     );
 }
 
+function rowAnimationCallback(filledRows) {
+    const nonFilledRowsCords = removeRow(filledRows);
+    gameGrid.shapes = nonFilledRowsCords;
+    moveBlocksDown(filledRows);
+    gameState = gameStates.PLAY;
+}
+
 function rowIsFilled() {
     if(gameGrid.shapes.length > 0) {
-        const shapeRowPositions = gameGrid.shapes.flatMap(getShapeRowPositions);
-        const rowObject = createRowObject(shapeRowPositions);
+        const rowObject = createRowObject(gameGrid.shapes);
         console.log(rowObject)
         const rows = Object.keys(rowObject);
         const filledRow = rows.filter(row => rowObject[row].length >= 5);
@@ -431,10 +472,6 @@ function rowIsFilled() {
     }
 
     return 0;
-}
-
-function getShapeRowPositions(shape) {
-    return shape.currentCords.map(cord => cord)
 }
 
 function createRowObject(rowPositions) {
@@ -480,4 +517,9 @@ function moveBlocksDown(rowObjs) {
             })
         )
     )
+}
+
+// TODO: Check if game is over
+function gameOver() {
+
 }
