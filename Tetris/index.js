@@ -1,6 +1,5 @@
 const gameCanvas = document.getElementById('gameCanvas'),
     shapeCanvas = document.getElementById('shapeCanvas'),
-    connectSound = new Audio('./connect.wav'),
     ROW_ANIMATION_TIME = 2000; // 2 seconds
 
 const gameStates = {
@@ -11,7 +10,12 @@ const gameStates = {
     GAME_OVER: 4
 };
 
-let gameState = gameStates.PLAY;
+const audio = {
+    connectSound: new Audio('./connect.wav'),
+    filledRow: new Audio('./filledrow.wav')
+}
+
+gameState = gameStates.PLAY;
 
 const shapes = [
     // I block
@@ -92,9 +96,14 @@ function moveCommand(axisIndex, increment) {
     const newPosition = gameGrid.startPos.map((pos, index) => index === axisIndex ? pos + increment : pos);
     const gameGridCopy = JSON.parse(JSON.stringify(gameGrid));
     const newCordPosition = calculateCords(gameGrid, gameGrid.currentShape, newPosition);
-    gameGridCopy.currentCords = newCordPosition;
-
-    if(!cordsAreNotValid(gameGridCopy)) {
+    console.log(gameGridCopy.currentCords, newCordPosition)
+    if(newCordPositionIsNotValid(gameGridCopy.currentCords, newCordPosition)) {
+        console.log('New cord position not valid!')
+        return;
+    }
+    
+    if(!cordsAreNotValid(newCordPosition)) {
+        gameGridCopy.currentCords = newCordPosition;
         gameGrid.startPos[axisIndex]+=increment;
     }
 }
@@ -115,21 +124,23 @@ function rotate() {
         console.log('INVALID');
         return;
     }
+    
     const newCordPosition = calculateCords(gameGridCopy, gameGridCopy.currentShape, gameGridCopy.startPos);
-    gameGridCopy.currentCords = newCordPosition;
-    if(!cordsAreNotValid(gameGridCopy)) {
+
+    if(!cordsAreNotValid(newCordPosition)) {
+        gameGridCopy.currentCords = newCordPosition;
         gameGrid.currentShape.cords = newSetOfCords;
         gameGrid.currentShape.rotationStage = newRotationStage;
     }
 }
 
-function cordsAreNotValid(grid) {
+function cordsAreNotValid(newCords) {
     // Makes sure one block is not in column 1 and another block is in the last column
-    return shapeHitWall(grid.currentCords) || collisionWithBlocks(grid);
+    return shapeHitWall(newCords) || collisionWithBlocks(newCords);
 }
 
 function shapeHitWall(cords) {
-    return cords.some(cord => cord.x <= gameGrid.borderOffset) && cords.some(cord => cord.x >= gameCanvas.width - gameGrid.borderOffset - gameGrid.cellWidth);
+    return cords.some(cord => cord.x === gameGrid.borderOffset) && cords.some(cord => cord.x >= gameCanvas.width - gameGrid.borderOffset - gameGrid.cellWidth);
 }
 
 function findShapeFromType(type) {
@@ -140,22 +151,18 @@ function rotateCords(cords, rotationStage) {
     switch (rotationStage) {
         case 0:
             return cords;
-            break;
         case 1:
             return cords.map(cord => {
                 return [cord[1], -cord[0]]
-            })
-            break;
+        })
         case 2:
             return cords.map(cord => {
                 return [-cord[0], -cord[1]]
-            })
-            break;
+        })
         case 3:
             return cords.map(cord => {
                 return [-cord[1], cord[0]]
-            })
-            break;
+        })
     }
 }
 
@@ -271,6 +278,10 @@ function checkGridIndexesAreValid(gridIndexes) {
     return gridIndexes.every(gridIndex => gridIndex >= gridSquares[0].id && gridIndex <= gridSquares[gridSquares.length - 1].id)
 }
 
+function newCordPositionIsNotValid(oldCords, newCords) {
+    return oldCords.some((oldCord, index) => newCords[index].x - oldCord.x > 35 || oldCord.x - newCords[index].x > 35)
+}
+
 function addShapesToGrid() {
     gameGrid.shapes.forEach(shape => addShapeToGrid(gameGrid, shape, shape.startPos, false));
 }
@@ -288,15 +299,10 @@ const gameObj = {
 function dropShape(timestamp) {
     const { startPos, currentCords, currentShape, shapes, paintGrid } = gameGrid;
 
-    // if (!start) start = timestamp;
-    // if(timestamp - start > 1000) {
-    //     start = timestamp;
-    // }
-
-
-
     if(gameState === gameStates.PLAY) {
-        if(checkCollisions()) {
+        const collision = checkCollisions();
+        console.log(collision, 'collision')
+        if(collision) {
             gameState = gameStates.COLLISION;
         } else {
             clearGrid();
@@ -310,7 +316,7 @@ function dropShape(timestamp) {
         const now = timestamp - gameObj.start;
         highlightRows(gameObj.rowWithAnimationTimes, now);
     } else if(gameState === gameStates.COLLISION) {
-        connectSound.play();
+        audio.connectSound.play();
         shapes.push({
             ...currentShape,
             currentCords,
@@ -318,51 +324,24 @@ function dropShape(timestamp) {
         });
 
         const filledRows = rowIsFilled();
+        console.log(filledRows, 'normal')
         if(filledRows) {
-            // TODO: Fix this state. Shape is getting mutated for some reason
-            console.log(filledRows, '?')
-            // TODO: Rewrite dropShape loop to work around gameState.
             // For animations to work, we have to sync it with our game loop
             // IE. time has to be synced with our game loop
             // Or time is in the game loop. We can't separate time from the game loop basically
-
+            filledRows.forEach(row =>row.cords.sort((cordA,cordB) => cordA.x - cordB.x))
             gameObj.start = timestamp;
-            // gameGrid.ctx.save();
-            gameObj.rowWithAnimationTimes.push(...addAnimationTimeToRows(filledRows));
+            gameObj.rowWithAnimationTimes = addAnimationTimeToRows(filledRows);
             gameState = gameStates.START_ROW_ANIMATION;
         } else if(gameOver()) {
             gameState = gameStates.GAME_OVER;
         } else {
-            const randomCords = getRandomShapeCords();
-            addShapeToGrid(shapeGrid, randomCords, [5,3]);
-            addShapeToGrid(gameGrid, randomCords, [10,4], 'dropshape');
+            generateNewShape();
             gameState = gameStates.PLAY;
         }
     } else if(gameState === gameStates.GAME_OVER) {
 
     }
-
-
-
-
-    // } else if(gameState === gameStates.START_ROW_ANIMATION) {
-    //
-    //     // gameGrid.ctx.restore();
-    //
-    //
-    //     if(gameState === gameStates.FINISH_ROW_ANIMATION) {
-    //
-    //     }
-    // } else if(checkCollisions()) {
-    //
-    //     const randomCords = getRandomShapeCords();
-    //     addShapeToGrid(shapeGrid, randomCords, [5,3]);
-    //     addShapeToGrid(gameGrid, randomCords, [10,4], 'dropshape');
-    // } else {
-    //
-    // }
-
-    // console.log('after', gameGrid.shapes);
     requestAnimationFrame(dropShape)
 }
 
@@ -381,34 +360,33 @@ function addAnimationTimeToRows(rowCords) {
     )
 }
 
+function generateNewShape() {
+    const randomCords = getRandomShapeCords();
+    addShapeToGrid(shapeGrid, randomCords, [5,3]);
+    addShapeToGrid(gameGrid, randomCords, [10,4], 'dropshape');
+}
+
 function highlightRows(rowCords, time) {
-    const cordsToAnimate = rowCords.flatMap(rowCord => rowCord.cords.filter((cord, i) => {
+
+    console.log(rowCords, 'highlightrows')
+    const rowAnimationRowFinished = rowCords.every(rowCord => highlightRow(rowCord, time));
+    if(rowAnimationRowFinished) {
+        rowAnimationCallback(rowCords);
+    }
+
+}
+
+function highlightRow(rowCord, time) {
+    const cordsToAnimate = rowCord.cords.filter((cord, i) => {
             return cord.time - time <= 0
-        })
-    );
-    const rowAnimationTimePerFrame = ROW_ANIMATION_TIME / cordsToAnimate.length;
-    console.log(rowAnimationTimePerFrame, cordsToAnimate)
+    })
+
     cordsToAnimate.forEach((cord, i, arr) => {
         gameGrid.ctx.fillStyle = 'white';
         gameGrid.ctx.fillRect(cord.x, cord.y, gameGrid.cellWidth, gameGrid.cellHeight);
-        if (cord.time === ROW_ANIMATION_TIME - rowAnimationTimePerFrame) rowAnimationCallback(rowCords);
     });
 
-    // console.log('highlighting row', cordIndex)
-    // if(rowIndex === rowCords.length - 1 && cordIndex === rowCords[rowIndex].length - 1) {
-    //     return;
-    // }
-
-    // if(cordIndex === rowCords[rowIndex].length - 1) {
-    //     highlightRows(rowCords, ++rowIndex, 0);
-    // }
-
-    // const block = rowCords[rowIndex].cords[cordIndex];
-    // gameGrid.ctx.fillStyle = 'white';
-    // gameGrid.ctx.fillRect(block.x, block.y, gameGrid.cellWidth, gameGrid.cellHeight);
-    // setTimeout(() => {
-    //     highlightRows(rowCords, rowIndex, ++cordIndex);
-    // }, 1000)
+    return cordsToAnimate.length === rowCord.cords.length
 }
 
 function clearGrid() {
@@ -429,13 +407,13 @@ function collisionWithFloor(grid=gameGrid) {
     return blocksTouchingBottom ? true : false;
 }
 
-function collisionWithBlocks(grid) {
+function collisionWithBlocks(newCords) {
     // Fix so shape cannot rotate if obstacle is right next to it
     // IE. it can't jump over a shape to rotate if the obstacle is along the path of rotation
-    return grid.shapes.length > 0 && grid.currentCords.some((cord, index) => grid.shapes.some(
+    return gameGrid.shapes.length > 0 && newCords.some((cord, index) => gameGrid.shapes.some(
         shape => shape.currentCords.some(shapeCord => {
                 const upperBoundCord = cord;
-                const lowerBoundCord = gameGrid.currentCords[index];
+                const lowerBoundCord = newCords[index];
                 return (shapeCord.x <= upperBoundCord.x && shapeCord.x >= lowerBoundCord.x && shapeCord.y <= upperBoundCord.y && shapeCord.y >= lowerBoundCord.y) ||
                     (shapeCord.x <= lowerBoundCord.x && shapeCord.x >= upperBoundCord.x && shapeCord.y <= lowerBoundCord.y && shapeCord.y >= upperBoundCord.y) ||
                     (shapeCord.x >= lowerBoundCord.x && shapeCord.x <= upperBoundCord.x && shapeCord.y <= lowerBoundCord.y && shapeCord.y >= upperBoundCord.y) ||
@@ -456,22 +434,27 @@ function collisionWithTopOfBlock() {
 }
 
 function rowAnimationCallback(filledRows) {
-    const nonFilledRowsCords = removeRow(filledRows);
-    gameGrid.shapes = nonFilledRowsCords;
+    gameGrid.shapes = removeRow(filledRows);
     moveBlocksDown(filledRows);
+    generateNewShape();
+    audio.filledRow.play();
     gameState = gameStates.PLAY;
 }
 
 function rowIsFilled() {
     if(gameGrid.shapes.length > 0) {
-        const rowObject = createRowObject(gameGrid.shapes);
-        console.log(rowObject)
+        const rowObject = createRowObject(gameGrid.shapes.flatMap(getShapeRowPositions));
         const rows = Object.keys(rowObject);
-        const filledRow = rows.filter(row => rowObject[row].length >= 5);
+        const filledRow = rows.filter(row => rowObject[row].length === gameGrid.rows);
+        console.log(rowObject)
         return filledRow.length && filledRow.map(row => ({row: +row, cords: rowObject[row]}));
     }
 
     return 0;
+}
+
+function getShapeRowPositions(shape) {
+    return shape.currentCords.map(cord => cord)
 }
 
 function createRowObject(rowPositions) {
@@ -483,9 +466,10 @@ function createRowObject(rowPositions) {
 }
 
 function removeRow(rows) {
+    // Make sure all cords do not have same y value as the filled out row
     return gameGrid.shapes.map(shape => ({
-            ...shape,
-            currentCords: getNonFilledInRowBlocks(shape, rows)
+        ...shape,
+        currentCords: getNonFilledInRowBlocks(shape, rows)
         })
     )
 }
