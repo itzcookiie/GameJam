@@ -15,6 +15,13 @@ const audio = {
     filledRow: new Audio('./filledrow.wav')
 }
 
+const linePoints = {
+    1: 100,
+    2: 300,
+    3: 500,
+    4: 800
+}
+
 gameState = gameStates.PLAY;
 
 const shapes = [
@@ -209,9 +216,16 @@ function generateGrid(gameGrid, colour) {
     }
 }
 
+const gameObj = {
+    start: 0,
+    rowWithAnimationTimes: [],
+    score: 0
+}
+
 const gameGrid = createGridObject(gameCanvas, 10, 20, 100, 'green', 'blue', 'black');
 const shapeGrid = createGridObject(shapeCanvas, 7, 10, gameGrid.border / 2, 'yellow', 'red', 'black');
 
+gameGrid.ctx.font = "30px Helvetica"
 gameGrid.paintGrid();
 shapeGrid.paintGrid();
 
@@ -291,18 +305,11 @@ const randomCords = getRandomShapeCords();
 addShapeToGrid(shapeGrid, randomCords, [5,3]);
 addShapeToGrid(gameGrid, randomCords, [10,4]);
 
-const gameObj = {
-    start: 0,
-    rowWithAnimationTimes: []
-}
-
 function dropShape(timestamp) {
     const { startPos, currentCords, currentShape, shapes, paintGrid } = gameGrid;
 
     if(gameState === gameStates.PLAY) {
-        const collision = checkCollisions();
-        console.log(collision, 'collision')
-        if(collision) {
+        if(checkCollisions()) {
             gameState = gameStates.COLLISION;
         } else {
             clearGrid();
@@ -311,6 +318,8 @@ function dropShape(timestamp) {
             addShapeToGrid(shapeGrid, shapeGrid.currentShape, shapeGrid.startPos);
             addShapeToGrid(gameGrid, gameGrid.currentShape, gameGrid.startPos, 'dropshape');
             addShapesToGrid();
+            gameGrid.ctx.fillStyle = 'white';
+            gameGrid.ctx.fillText("Score: " + gameObj.score, (gameCanvas.width / 2) - 30, 30)
         }
     } else if(gameState === gameStates.START_ROW_ANIMATION) {
         const now = timestamp - gameObj.start;
@@ -369,7 +378,7 @@ function generateNewShape() {
 function highlightRows(rowCords, time) {
 
     console.log(rowCords, 'highlightrows')
-    const rowAnimationRowFinished = rowCords.every(rowCord => highlightRow(rowCord, time));
+    const rowAnimationRowFinished = rowCords.filter(rowCord => highlightRow(rowCord, time)).length === rowCords.length;
     if(rowAnimationRowFinished) {
         rowAnimationCallback(rowCords);
     }
@@ -433,11 +442,17 @@ function collisionWithTopOfBlock() {
     );
 }
 
+function addScore(lines) {
+    const pointsScored = linePoints[lines];
+    gameObj.score += pointsScored;
+}
+
 function rowAnimationCallback(filledRows) {
     gameGrid.shapes = removeRow(filledRows);
     moveBlocksDown(filledRows);
     generateNewShape();
     audio.filledRow.play();
+    addScore(filledRows.length);
     gameState = gameStates.PLAY;
 }
 
@@ -503,7 +518,133 @@ function moveBlocksDown(rowObjs) {
     )
 }
 
+function getStartPos(shapeCords, middle) {
+    const newShapeCords = makeNumbersPositive(shapeCords);
+    const shapeHeight = calculateHeight(newShapeCords);
+    const y = shapeHeight;
+    const furthestLeftXcord = getFurthestLeftXCord(newShapeCords, y, middle);
+    const furthestRightXcord = getFurthestRightXCord(newShapeCords, y);
+    const nearestLeftObstacleXCord = findNearestLeftObstacleXCord(furthestLeftXcord, y);
+    const nearestRightObstacleXCord = findNearestRightObstacleXCord(furthestRightXcord, y);
+}
+
+function findNearestRightObstacleXCord(furthestRightXcord, y) {
+    const obstaclesCordsAlongXAxis = gameGrid.shapes.flatMap(shape => shape.currentCords.filter(cord => 
+        cord.x === furthestRightXcord && cord.y === y
+    ));
+    const xCords = obstaclesCordsAlongXAxis.map(cord => cord.x);
+    return Math.max(...xCords);
+}
+
+function findNearestLeftObstacleXCord(furthestLeftXcord, y) {
+
+    const obstaclesCordsAlongXAxis = gameGrid.shapes.flatMap(shape => shape.currentCords.filter(cord => 
+        cord.x <= furthestLeftXcord && cord.y === y
+    ));
+    const xCords = obstaclesCordsAlongXAxis.map(cord => cord.x);
+    return Math.max(...xCords);
+}
+
+// TODO: Convert cord to actual position on grid by adding x cord to first number in startPos
+// Then multipying it by gameGrid.cellWidth to get x position
+function getFurthestLeftXCord(shapeCords, y, startPos) {
+    const xCordsAlongHighestY = shapeCords.filter(cord => cord[1] === y);
+    const xCords = xCordsAlongHighestY.flatMap(cord => cord[0]);
+    return Math.min(...xCords);
+}
+
+function getFurthestRightXCord(shapeCords, y) {
+    const xCordsAlongHighestY = shapeCords.filter(cord => cord[1] === y);
+    const xCords = xCordsAlongHighestY.map(cord => cord[0]);
+    return Math.max(...xCords);
+}
+
+function calculateHeight(shapeCords) {
+    const yValues = shapeCords.flatMap(cord => cord[1]);
+    return Math.max(...yValues);
+}
+
+function makeNumbersPositive(shapeCords) {
+    return shapeCords.map(cord => {
+        cord[0] < 0 ? cord[0]*=-1 : cord[0];
+        cord[1] < 0 ? cord[1]*=-1 : cord[1];
+        return cord;
+    })
+}
+
 // TODO: Check if game is over
 function gameOver() {
 
 }
+
+const squareShape = {
+        "type": "Square",
+        "cords": [
+            [
+                1,
+                0
+            ],
+            [
+                1,
+                -1
+            ],
+            [
+                0,
+                -1
+            ]
+        ],
+        "cordIndex": 0,
+        "currentCords": [
+            {
+                "x": 50,
+                "y": 500
+            },
+            {
+                "x": 85,
+                "y": 500
+            },
+            {
+                "x": 85,
+                "y": 450
+            },
+            {
+                "x": 50,
+                "y": 450
+            }
+        ],
+        "startPos": [
+            0,
+            0
+        ]
+    };
+
+function rowTest() {
+    const first40Squares = gameGrid.gridSquares.filter((square,i) => i <= 39)
+    const shapes = [];
+    for(let i = 0; i < 18; i+=2) {
+        shapes.push({
+            ...squareShape,
+            currentCords: squareShape.currentCords.map(cord => ({
+                    ...cord,
+                    x: cord.x + (i * gameGrid.cellWidth),
+                })
+            ),
+            startPos: [i,9]
+        })
+    }
+    for(let i = 0; i < 18; i+=2) {
+        shapes.push({
+            ...squareShape,
+            currentCords: squareShape.currentCords.map(cord => ({
+                    ...cord,
+                    x: cord.x + (i * gameGrid.cellWidth),
+                    y: cord.y - (gameGrid.cellHeight * 2)
+                })
+            ),
+            startPos: [i,7]
+        })
+    }
+    return shapes;
+}
+
+gameGrid.shapes = rowTest();
