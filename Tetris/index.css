@@ -1,5 +1,151 @@
+* {
+    font-family: 'Staatliches', cursive;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    height: 100%;
+    width: 100%;
+}
+
+body {
+    height: 100%;
+    width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+body.MAIN_MENU .game-over, body.PLAY .game-over {
+    display: none;
+}
+
+body.PLAY .game-menu, body.GAME_OVER .game-menu {
+    display: none;
+}
+body.PLAY .gameGrids {
+    display: block;
+}
+
+body.GAME_OVER .game-over {
+    display: block;
+}
+
 #shapeCanvas {
     position: absolute;
     top: 200px;
     right: 150px
 }
+
+.game-menu, .game-over {
+    height: 500px;
+    width: 600px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: lightblue;
+    border: 1px solid black;
+}
+
+.game-over {
+    background-color: red;
+}
+
+.gameGrids {
+    display: none;
+}
+
+.container {
+    position: relative;
+    text-align: center;
+    padding: 50px;
+    font-size: 3rem;
+    height: 100%;
+    width: 100%;
+}
+
+.block-container, .bash-container, .button-container {
+    position: relative;
+    transform: translateX(50%);
+
+}
+
+.block-container {
+    right: 50%;
+    animation: moveBlock 1s linear 1 normal forwards;
+}
+
+.bash-container {
+    right: 50%;
+    top: 50%;
+    transform: translateX(50%) translateY(-50%);
+    animation: moveBash 1s linear 1 normal forwards;
+}
+
+.block-container h1, .bash-container h2, .button-container button, .bash-container h4 {
+    position: absolute;
+    width: 100%;
+}
+
+.button-container {
+    position: absolute;
+    left: -25%;
+    width: 300px;
+    bottom: 150px;
+}
+
+.container h1 {
+    background: rebeccapurple;
+}
+
+.container h2 {
+    background: green;
+}
+
+.game-over .container h2 {
+    color: white;
+    background: transparent;
+}
+
+.game-over .highscore {
+    height: 100%;
+    width: 100%;
+}
+
+.game-over .highscore .score {
+    bottom: 60px;
+}
+
+.container button {
+    opacity: 0;
+    background-color: orange;
+    color: white;
+    padding: 10px;
+    font-size: 3rem;
+    letter-spacing: 5px;
+    animation: showButton 1s linear 1s 1 normal forwards;
+}
+
+@keyframes moveBlock {
+    0% { top: -100%; }
+    100% { top: 0 }
+}
+
+@keyframes moveBash {
+    0% { top: 200%; }
+    100% { top: 120px }
+}
+
+@keyframes showButton {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+

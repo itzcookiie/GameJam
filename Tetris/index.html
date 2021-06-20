@@ -4,12 +4,46 @@
     <meta charset="utf-8">
     <meta name="description" content="">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Staatliches&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./index.css">
-    <script defer src="./index.js"></script>
+    <script defer type="module" src="./index.js"></script>
+    <script defer type="module" src="./game-menu.js"></script>
     <title>Tetris</title>
 </head>
-<body>
-    <canvas id="gameCanvas" width="800" height="800"></canvas>
-    <canvas id="shapeCanvas" width="400" height="300"></canvas>
+<body class="MAIN_MENU">
+
+    <div class="game-menu">
+        <div class="container">
+            <div class="block-container">
+                <h1>BLOCK</h1>
+            </div>
+            <div class="bash-container">
+                <h2>BASH</h2>
+            </div>
+            <div class="button-container">
+                <button id="play">PLAY</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="game-over">
+        <div class="container">
+            <div class="bash-container">
+                <h2 class="score">Score: </h2>
+            </div>
+            <div class="bash-container highscore">
+                <h4 class="score">High Score: </h2>
+            </div>
+            <div class="button-container">
+                <button id="restart">PLAY AGAIN</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="gameGrids">
+        <canvas id="gameCanvas" width="600" height="800"></canvas>
+        <canvas id="shapeCanvas" width="400" height="300"></canvas>
+    </div>
 </body>
 </html>

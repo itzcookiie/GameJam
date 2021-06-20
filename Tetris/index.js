@@ -1,13 +1,17 @@
 const gameCanvas = document.getElementById('gameCanvas'),
     shapeCanvas = document.getElementById('shapeCanvas'),
-    ROW_ANIMATION_TIME = 2000; // 2 seconds
+    ROW_ANIMATION_TIME = 2000, // 2 seconds
+    bodyElement = document.querySelector('body'),
+    gameOverMenu = document.querySelector('.game-over');
+
 
 const gameStates = {
     PLAY: 0,
-    START_ROW_ANIMATION: 1,
-    FINISH_ROW_ANIMATION: 2,
-    COLLISION: 3,
-    GAME_OVER: 4
+    MAIN_MENU: 1,
+    START_ROW_ANIMATION: 2,
+    FINISH_ROW_ANIMATION: 3,
+    COLLISION: 4,
+    GAME_OVER: 5,
 };
 
 const audio = {
@@ -23,7 +27,21 @@ const linePoints = {
     4: 800
 }
 
-gameState = gameStates.PLAY;
+const gameObj = {
+    start: 0,
+    rowAnimationStart: 0,
+    rowWithAnimationTimes: [],
+    score: 0
+}
+
+let gameGrid;
+let shapeGrid;
+let gameState;
+
+function createGridObjects() {
+    gameGrid = createGridObject(gameCanvas, 15, 15, 100, 'green', 'blue', 'black');
+    shapeGrid = createGridObject(shapeCanvas, 7, 10, gameGrid.border / 2, 'yellow', 'red', 'black');
+}
 
 const shapes = [
     // I block
@@ -90,31 +108,41 @@ window.addEventListener('keydown', e => {
                 rotate();
                 break;
             case 'ArrowRight':
-                moveCommand(0, 1);
+                moveCommand(0, 1, 'right');
                 break;
             case 'ArrowLeft':
-                moveCommand(0, -1);
+                moveCommand(0, -1, 'left');
                 break;
             case 'ArrowDown':
-                moveCommand(1, 1);
+                moveCommand(1, 1, 'down');
                 break;
         }
     }
 })
 
-function moveCommand(axisIndex, increment) {
+function moveCommand(axisIndex, increment, dir) {
     const newPosition = gameGrid.startPos.map((pos, index) => index === axisIndex ? pos + increment : pos);
     const gameGridCopy = JSON.parse(JSON.stringify(gameGrid));
     const newCordPosition = calculateCords(gameGrid, gameGrid.currentShape.cords, newPosition);
+    if(!newCordPosition.length && dir !== 'down') return;
+
+    if(collisionWithTopOfBlock(newCordPosition) && dir === 'down' || !newCordPosition.length) {
+        console.log('COLLISION');
+        gameGrid.cordHistory.push({currentCords: newCordPosition, startPos: newPosition});
+        gameState = gameStates.COLLISION;
+        return;
+    }
+
     if(newCordPositionIsNotValid(gameGridCopy.currentCords, newCordPosition)) {
         console.log('New cord position not valid!')
         return;
     }
     
     if(!cordsAreNotValid(newCordPosition)) {
-        gameGridCopy.currentCords = newCordPosition;
+        gameGrid.currentCords = newCordPosition;
         gameGrid.startPos[axisIndex]+=increment;
-    }
+        gameGrid.cordHistory.push({currentCords: newCordPosition, startPos: newPosition});
+    } 
 }
 
 function rotate() {
@@ -129,17 +157,11 @@ function rotate() {
     const gameGridCopy = JSON.parse(JSON.stringify(gameGrid));
     gameGridCopy.currentShape.cords = newSetOfCords;
     gameGridCopy.currentShape.rotationStage = newRotationStage;
-    const gridIndexes = getGridIndexes(gameGridCopy.currentShape.cords, gameGridCopy.rows, gameGridCopy.startPos);
-    const validCords = checkGridIndexesAreValid(gridIndexes);
-    if(!validCords) {
-        console.log('INVALID');
-        return;
-    }
     
     const newCordPosition = calculateCords(gameGridCopy, gameGridCopy.currentShape.cords, gameGridCopy.startPos);
 
-    if(!cordsAreNotValid(newCordPosition)) {
-        gameGridCopy.currentCords = newCordPosition;
+    if(newCordPosition.length && !cordsAreNotValid(newCordPosition)) {
+        gameGrid.currentCords = newCordPosition;
         gameGrid.currentShape.cords = newSetOfCords;
         gameGrid.currentShape.rotationStage = newRotationStage;
     }
@@ -193,13 +215,14 @@ function createGridObject(canvas, cols, rows, border, bgColour, gridLinesColour,
         gridSquares: [],
         currentShape: [],
         currentCords: [],
+        cordHistory: [],
         startPos: [],
         shapes: [],
         bgColour,
         gridLinesColour,
         shapeColour,
         endOfGrid() { 
-            return canvas.width - this.borderOffset - this.cellWidth
+            return this.borderOffset + (this.rows * this.cellWidth) - this.cellWidth;
         },
         middleOfGrid() {
             return [Math.floor(this.rows / 2), Math.floor(this.cols / 2)]
@@ -225,20 +248,6 @@ function generateGrid(gameGrid, colour) {
         }
     }
 }
-
-const gameObj = {
-    start: 0,
-    rowAnimationStart: 0,
-    rowWithAnimationTimes: [],
-    score: 0
-}
-
-const gameGrid = createGridObject(gameCanvas, 15, 20, 100, 'green', 'blue', 'black');
-const shapeGrid = createGridObject(shapeCanvas, 7, 10, gameGrid.border / 2, 'yellow', 'red', 'black');
-
-gameGrid.ctx.font = "30px Helvetica"
-gameGrid.paintGrid();
-shapeGrid.paintGrid();
 
 function getRandomShape() {
     return shapes[Math.floor(Math.random() * shapes.length)];
@@ -285,7 +294,10 @@ function addShapeToGrid(grid, shape, startPos, save=true) {
 function calculateCords(grid, cords, startPos) {
     const { gridSquares } = grid;
     const gridIndexes = getGridIndexes(cords, grid.rows, startPos);
-    return gridIndexes.map(gridIndex => ({x: gridSquares[gridIndex].x, y: gridSquares[gridIndex].y}))
+
+    return checkGridIndexesAreValid(gridIndexes) 
+    ? gridIndexes.map(gridIndex => ({x: gridSquares[gridIndex].x, y: gridSquares[gridIndex].y}))
+    : [];
 }
 
 function getGridIndexes(cords, rows, startPos) {
@@ -304,35 +316,47 @@ function checkGridIndexesAreValid(gridIndexes) {
 }
 
 function newCordPositionIsNotValid(oldCords, newCords) {
-    return oldCords.some((oldCord, index) => newCords[index].x - oldCord.x > 35 || oldCord.x - newCords[index].x > 35)
+    return oldCords.some((oldCord, index) => newCords[index].x - oldCord.x > gameGrid.cellWidth || oldCord.x - newCords[index].x > gameGrid.cellWidth)
 }
 
 function addShapesToGrid() {
     gameGrid.shapes.forEach(shape => addShapeToGrid(gameGrid, shape, shape.startPos, false));
 }
 
-const randomCords = getRandomShapeCords();
-addShapeToGrid(shapeGrid, randomCords, shapeGrid.middleOfGrid());
-addShapeToGrid(gameGrid, randomCords, simpleStartPos(gameGrid, randomCords));
+function gameInit() {
+    gameObj.score = 0;
+    gameGrid.shapes = [];
+    gameGrid.ctx.font = "30px Helvetica"
+    gameGrid.paintGrid();
+    shapeGrid.paintGrid();
+
+    const randomCords = getRandomShapeCords();
+    addShapeToGrid(shapeGrid, getRandomShapeCords(), shapeGrid.middleOfGrid()); 
+    addShapeToGrid(gameGrid, randomCords, simpleStartPos(gameGrid, randomCords));
+    gameGrid.ctx.fillStyle = 'white';
+    gameGrid.ctx.fillText("Score: " + gameObj.score, (gameCanvas.width / 2) - 30, 30);
+    gameGrid.cordHistory.push({currentCords: gameGrid.currentCords, startPos: [...gameGrid.startPos]});
+
+    gameState = gameStates.PLAY;
+    requestAnimationFrame(dropShape);
+}
 
 function dropShape(timestamp) {
-    const { startPos, currentCords, currentShape, shapes, paintGrid } = gameGrid;
+    const { startPos, currentCords, currentShape, shapes, paintGrid, cordHistory } = gameGrid;
     if(gameObj.start === 0) gameObj.start = timestamp;
     
     if(gameState === gameStates.PLAY) {
-        if(checkCollisions()) {
-            gameState = gameStates.COLLISION;
+        if(timestamp - gameObj.start >= 750) {
+            // console.log(gameGrid.currentCords, gameGrid.startPos, 'before game loop move');
+            moveCommand(1,1, 'down');
+            // console.log(gameGrid.currentCords, gameGrid.startPos, 'after game loop move');
+            gameObj.start = timestamp;
         } else {
-            if(timestamp - gameObj.start >= 500) {
-                moveCommand(1,1);
-                console.log(gameGrid.currentCords);
-                gameObj.start = timestamp;
-            }
             clearGrid();
             gameGrid.paintGrid();
             shapeGrid.paintGrid();
             addShapeToGrid(shapeGrid, shapeGrid.currentShape, shapeGrid.startPos);
-            addShapeToGrid(gameGrid, gameGrid.currentShape, gameGrid.startPos, 'dropshape');
+            addShapeToGrid(gameGrid, gameGrid.currentShape, gameGrid.startPos);
             addShapesToGrid();
             gameGrid.ctx.fillStyle = 'white';
             gameGrid.ctx.fillText("Score: " + gameObj.score, (gameCanvas.width / 2) - 30, 30);
@@ -346,14 +370,30 @@ function dropShape(timestamp) {
         if(gameOver()) {
             audio.gameOver.play();
             console.log('GAME OVER');
-            gameState = gameStates.GAME_OVER;
+            bodyElement.classList.remove('PLAY');
+            bodyElement.classList.add('GAME_OVER');
+            const scoreElement = gameOverMenu.querySelector('.bash-container h2');
+            scoreElement.innerText = `Score: ${gameObj.score}`;
+            const highScore = localStorage.getItem('highscore');
+            // Check if highscore exists
+            if(!highScore) {
+                localStorage.setItem('highscore', gameObj.score);
+            }
+            console.log(highScore)
+            // If score is > highscore, make new high score
+            if(+highScore && +gameObj.score > +highScore) {
+                localStorage.setItem('highscore', gameObj.score);
+            }
+            const highScoreElement = gameOverMenu.querySelector('.bash-container h4');
+            highScoreElement.innerText = `High score: ${localStorage.getItem('highscore')}`;
             return;
         }
 
         shapes.push({
             ...currentShape,
             currentCords,
-            startPos
+            startPos,
+            cordHistory
         });
 
         const filledRows = rowIsFilled();
@@ -373,10 +413,8 @@ function dropShape(timestamp) {
     } else if(gameState === gameStates.GAME_OVER) {
 
     }
-    requestAnimationFrame(dropShape)
+    requestAnimationFrame(dropShape);
 }
-
-requestAnimationFrame(dropShape);
 
 function addAnimationTimeToRows(rowCords) {
     return rowCords.map(rowCord =>
@@ -392,9 +430,9 @@ function addAnimationTimeToRows(rowCords) {
 }
 
 function generateNewShape() {
-    const randomCords = getRandomShapeCords();
-    addShapeToGrid(shapeGrid, randomCords, shapeGrid.middleOfGrid());
-    addShapeToGrid(gameGrid, randomCords, simpleStartPos(gameGrid, randomCords));
+    addShapeToGrid(gameGrid, shapeGrid.currentShape, simpleStartPos(gameGrid, shapeGrid.currentShape));
+    addShapeToGrid(shapeGrid, getRandomShapeCords(), shapeGrid.middleOfGrid());
+    gameGrid.cordHistory = [];
 }
 
 function highlightRows(rowCords, time) {
@@ -416,6 +454,15 @@ function highlightRow(rowCord, time) {
     return cordsToAnimate.length === rowCord.cords.length
 }
 
+function rowAnimationCallback(filledRows) {
+    gameGrid.shapes = removeRow(filledRows);
+    moveBlocksDown(filledRows);
+    audio.filledRow.play();
+    generateNewShape();
+    addScore(filledRows.length, true);
+    gameState = gameStates.PLAY;
+}
+
 function clearGrid() {
     const { borderOffset: gameGridBorderOffset, ctx: gameGridCtx } = gameGrid;
     const { borderOffset: shapeGridBorderOffset, ctx: shapeGridCtx } = shapeGrid;
@@ -423,15 +470,15 @@ function clearGrid() {
     shapeGridCtx.clearRect(shapeGridBorderOffset, shapeGridBorderOffset, shapeCanvas.width - shapeGridBorderOffset * 2, shapeCanvas.height - shapeGridBorderOffset * 2);
 }
 
-function checkCollisions() {
-    return collisionWithFloor() || collisionWithTopOfBlock();
+function checkCollisions(newCords) {
+    return collisionWithFloor(newCords) || collisionWithTopOfBlock(newCords);
 }
 
-function collisionWithFloor(grid=gameGrid) {
-    const { cols, cellHeight, borderOffset, startPos, currentShape, shapes, currentCords } = grid;
+function collisionWithFloor(newCords) {
+    const { cols, cellHeight, borderOffset } = gameGrid;
     const bottomOfGrid = borderOffset + (cellHeight * cols) - cellHeight; 
-    const blocksTouchingBottom = currentCords.some(cord => cord.y === bottomOfGrid);
-    return blocksTouchingBottom ? true : false;
+    const blocksTouchingBottom = newCords.some(cord => cord.y > bottomOfGrid);
+    return blocksTouchingBottom;
 }
 
 function collisionWithBlocks(newCords) {
@@ -451,10 +498,10 @@ function collisionWithBlocks(newCords) {
     );
 }
 
-function collisionWithTopOfBlock() {
-    return gameGrid.shapes.length > 0 && gameGrid.currentCords.some(cord => gameGrid.shapes.some(shape =>
+function collisionWithTopOfBlock(newCords) {
+    return gameGrid.shapes.length > 0 && newCords.some(cord => gameGrid.shapes.some(shape =>
             shape.currentCords.some(shapeCord =>
-                cord.x === shapeCord.x && cord.y + gameGrid.cellHeight === shapeCord.y
+                cord.x === shapeCord.x && cord.y === shapeCord.y
             )
         )
     );
@@ -468,15 +515,6 @@ function addScore(points, scoreForRows=false) {
         // Add length of shape to score
         gameObj.score += points;
     }
-}
-
-function rowAnimationCallback(filledRows) {
-    gameGrid.shapes = removeRow(filledRows);
-    moveBlocksDown(filledRows);
-    audio.filledRow.play();
-    generateNewShape();
-    addScore(filledRows.length, true);
-    gameState = gameStates.PLAY;
 }
 
 function rowIsFilled() {
@@ -547,54 +585,53 @@ function simpleStartPos(grid, shape) {
     const newSetOfCords = calculateCords(grid, shape.cords, startPos);
     const yCords = newSetOfCords.map(cord => cord.y);
     return [x, y - yDeduction(yCords, grid)];
-
-}
-
-// Bonus: Make start pos where ever it is possible to place shape i.e. not just the middle
-function getStartPos(grid, shape, startPos) {
-    // Fix bug where shapes are not generated correctly when spawning at y=0
-    const newSetOfCords = calculateCords(grid, shape.cords, startPos);
-    const y = calculateY(newSetOfCords);
-    const newStartPos = calculateNewStartPos(newSetOfCords, startPos);
-    const [furthestLeftXCord, furthestRightXCord] = getFurthestXCords(newSetOfCords, y);
-    const [nearestLeftObstacleXCord, nearestRightObstacleXCord] = findNearestObstaclesXCord(furthestRightXCord, furthestLeftXCord, y);
-    const shapeCords = [nearestLeftObstacleXCord / grid.cellWidth, nearestRightObstacleXCord / grid.cellWidth]
-    const xMidpoint = parseInt((shapeCords[0] + shapeCords[1]) / 2);
-    return [xMidpoint, y / gameGrid.cellHeight];
-}
-
-function findNearestObstaclesXCord(furthestRightXcord, furthestLeftXcord, y) {
-    const obstaclesCordsAlongXAxis = gameGrid.shapes.flatMap(shape => shape.currentCords.filter(cord => cord.y === y));
-    const leftXCords = obstaclesCordsAlongXAxis.filter(cord => cord.x <= furthestLeftXcord).map(cord => cord.x);
-    const rightXCords = obstaclesCordsAlongXAxis.filter(cord => cord.x >= furthestRightXcord).map(cord => cord.x);
-    const maxRightCord = rightXCords.length ? Math.max(...rightXCords) : 0
-    const maxLeftCord = leftXCords.length ? Math.max(...leftXCords) : 0
-    return [maxLeftCord, maxRightCord || gameGrid.endOfGrid()];
-}
-
-// TODO: Convert cord to actual position on grid by adding x cord to first number in startPos
-// Then multipying it by gameGrid.cellWidth to get x position
-function getFurthestXCords(shapeCords, y) {
-    const xCordsAlongHighestY = shapeCords.filter(cord => cord.y === y);
-    const xCords = xCordsAlongHighestY.map(cord => cord.x);
-    return [Math.min(...xCords), Math.max(...xCords)]
-}
-
-function calculateNewStartPos(shapeCords, startPos) {
-    const yValues = shapeCords.flatMap(cord => cord.y);
-    const minYCord = Math.min(...yValues);
-    const distanceToTop = minYCord / gameGrid.cellHeight;
-    return [startPos[0], startPos[1] - distanceToTop];
 }
 
 function yDeduction(yCords, grid) {
     return parseInt((Math.min(...yCords) - grid.borderOffset) / grid.cellHeight);
 }
 
-function calculateY(shapeCords) {
-    const yValues = shapeCords.flatMap(cord => cord.y);
-    return Math.max(...yValues) - Math.min(...yValues);
-}
+// Bonus: Make start pos where ever it is possible to place shape i.e. not just the middle
+// function getStartPos(grid, shape, startPos) {
+//     // Fix bug where shapes are not generated correctly when spawning at y=0
+//     const newSetOfCords = calculateCords(grid, shape.cords, startPos);
+//     const y = calculateY(newSetOfCords);
+//     const newStartPos = calculateNewStartPos(newSetOfCords, startPos);
+//     const [furthestLeftXCord, furthestRightXCord] = getFurthestXCords(newSetOfCords, y);
+//     const [nearestLeftObstacleXCord, nearestRightObstacleXCord] = findNearestObstaclesXCord(furthestRightXCord, furthestLeftXCord, y);
+//     const shapeCords = [nearestLeftObstacleXCord / grid.cellWidth, nearestRightObstacleXCord / grid.cellWidth]
+//     const xMidpoint = parseInt((shapeCords[0] + shapeCords[1]) / 2);
+//     return [xMidpoint, y / gameGrid.cellHeight];
+// }
+
+// function findNearestObstaclesXCord(furthestRightXcord, furthestLeftXcord, y) {
+//     const obstaclesCordsAlongXAxis = gameGrid.shapes.flatMap(shape => shape.currentCords.filter(cord => cord.y === y));
+//     const leftXCords = obstaclesCordsAlongXAxis.filter(cord => cord.x <= furthestLeftXcord).map(cord => cord.x);
+//     const rightXCords = obstaclesCordsAlongXAxis.filter(cord => cord.x >= furthestRightXcord).map(cord => cord.x);
+//     const maxRightCord = rightXCords.length ? Math.max(...rightXCords) : 0
+//     const maxLeftCord = leftXCords.length ? Math.max(...leftXCords) : 0
+//     return [maxLeftCord, maxRightCord || gameGrid.endOfGrid()];
+// }
+
+// // TODO: Convert cord to actual position on grid by adding x cord to first number in startPos
+// // Then multipying it by gameGrid.cellWidth to get x position
+// function getFurthestXCords(shapeCords, y) {
+//     const xCordsAlongHighestY = shapeCords.filter(cord => cord.y === y);
+//     const xCords = xCordsAlongHighestY.map(cord => cord.x);
+//     return [Math.min(...xCords), Math.max(...xCords)]
+// }
+
+// function calculateNewStartPos(shapeCords, startPos) {
+//     const yValues = shapeCords.flatMap(cord => cord.y);
+//     const minYCord = Math.min(...yValues);
+//     const distanceToTop = minYCord / gameGrid.cellHeight;
+//     return [startPos[0], startPos[1] - distanceToTop];
+// }
+
+// function calculateY(shapeCords) {
+//     const yValues = shapeCords.flatMap(cord => cord.y);
+//     return Math.max(...yValues) - Math.min(...yValues);
+// }
 
 // TODO: Check if game is over
 function gameOver() {
@@ -602,7 +639,6 @@ function gameOver() {
     gameGrid.currentCords.some(currentCord => 
         gameGrid.shapes.some(shape =>
             shape.currentCords.some(obstacleCord => {   
-                console.log(obstacleCord, currentCord)
                 return obstacleCord.x === currentCord.x && obstacleCord.y === currentCord.y
                 }
             )
@@ -680,3 +716,6 @@ function rowTest() {
 }
 
 // gameGrid.shapes = rowTest();
+// gameInit();
+
+export { gameState, gameStates, createGridObjects, gameInit, gameCanvas, shapeCanvas }
